@@ -16,6 +16,7 @@
 static const struct flash_driver * const flash_drivers[] = {
 	&aduc702x_flash,
 	&aducm360_flash,
+	&am13_flash,
 	&ambiqmicro_flash,
 	&at91sam3_flash,
 	&at91sam4_flash,
