@@ -71,6 +71,10 @@ static bool cc27xx_check_allowed_flash_op(int op)
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
 			LOG_INFO("Performing Chip Erase");
+		} else if (cc_op == CC_LPF3_FLASH_OP_PROG_MAIN) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_MAIN;
+			LOG_INFO("Programming Main without prior erase");
 		}
 		break;
 
@@ -141,6 +145,9 @@ static bool cc27xx_check_allowed_flash_op(int op)
 		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_SCFG && !b_ccfg) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_SCFG;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
 		}
 		break;
 

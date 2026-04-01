@@ -547,7 +547,7 @@ int cc_lpf3_do_blank_check(struct flash_bank *bank)
 	if (bank->base == LPF3_FLASH_BASE_CCFG) {
 		ret_val = cc_lpf3_saci_verify_ccfg(bank, NULL);
 	} else if (bank->base == LPF3_FLASH_BASE_MAIN) {
-		ret_val = cc_lpf3_saci_verify_main(bank, NULL, 0);
+		ret_val = cc_lpf3_saci_verify_main(bank, NULL, 0, (uint32_t)bank->base);
 	} else {
 		LOG_ERROR("ERROR : Unknown bank for blank check");
 		return ERROR_FAIL;
@@ -640,15 +640,16 @@ int cc_lpf3_saci_verify_scfg(struct flash_bank *bank, const uint8_t* buffer, uin
 /*
  * Main Flash bank verify command
  */
-int cc_lpf3_saci_verify_main(struct flash_bank *bank, const uint8_t* buffer, uint32_t count)
+int cc_lpf3_saci_verify_main(struct flash_bank *bank, const uint8_t* buffer, uint32_t count, uint32_t start_addr)
 {
+	LOG_INFO ("cc_lpf3_saci_verify_main is called");
 	SACI_PARAM_T cmd;
 	SACI_RESP_T cmd_resp;
 	int ret_val;
 
 	memset((uint8_t*)&cmd, 0, sizeof(SACI_PARAM_T));
 	cc_lpf3_update_cmd_word(SACI_FLASH_VERIFY_MAIN_SECTORS, &cmd, 0);
-	cmd.flash_verify_main_sectors.first_sector_addr = (uint32_t)bank->base;
+	cmd.flash_verify_main_sectors.first_sector_addr = start_addr;
 
 	// if data is there it should be sector aligned, otherwise just do blank check
 	if (buffer && (count%LPF3_MAIN_FLASH_SECTOR_SIZE == 0)) {
@@ -879,7 +880,7 @@ int cc_lpf3_write_main(struct flash_bank *bank, const uint8_t *buffer,
 	memset((uint8_t*)&cmd, 0, sizeof(SACI_PARAM_T));
 	cc_lpf3_update_cmd_word(SACI_FLASH_PROG_MAIN_PIPELINED, &cmd, 0);
 	cmd.flash_prog_main_pipelined.key = FLASH_KEY;
-	cmd.flash_prog_main_pipelined.first_sector_addr = (uint32_t)bank->base;
+	cmd.flash_prog_main_pipelined.first_sector_addr = (uint32_t)(bank->base + offset);
 
 	/*Program Main through pipeline Command*/
 	ret_val = cc_lpf3_saci_send_cmd(bank, cmd);
@@ -901,7 +902,7 @@ int cc_lpf3_write_main(struct flash_bank *bank, const uint8_t *buffer,
 		LOG_ERROR("Flash Sector programming failure");
 	else {
 		uint8_t	 *tx_bytes = (uint8_t*)tx_words;
-		ret_val = cc_lpf3_saci_verify_main(bank, tx_bytes, count);
+		ret_val = cc_lpf3_saci_verify_main(bank, tx_bytes, count, (uint32_t)(bank->base + offset));
 	}
 
 	if (ret_val != ERROR_OK)

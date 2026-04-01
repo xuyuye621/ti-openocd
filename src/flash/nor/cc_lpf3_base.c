@@ -240,7 +240,7 @@ int cc_lpf3_base_verify(struct flash_bank *bank, const uint8_t *buffer, uint32_t
         if (count % LPF3_MAIN_FLASH_SECTOR_SIZE) {
             count = count + (LPF3_MAIN_FLASH_SECTOR_SIZE - count % LPF3_MAIN_FLASH_SECTOR_SIZE);
         }
-        retval = cc_lpf3_saci_verify_main(bank, buffer, count);
+        retval = cc_lpf3_saci_verify_main(bank, buffer, count, (uint32_t)(bank->base + offset));
     } else {
         LOG_ERROR("Host requesting wrong banks to verify");
         return ERROR_FAIL;
