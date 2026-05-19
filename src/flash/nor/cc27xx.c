@@ -49,7 +49,7 @@ static int cc27xx_check_device_memory_info(struct cc_lpf3_flash_bank *cc_lpf3_in
 			cc_lpf3_info->main_flash_size_kb = cc27xx_parts[total_parts].flash_size;
 			cc_lpf3_info->sram_size_kb = cc27xx_parts[total_parts].ram_size;
 			cc_lpf3_info->name = cc27xx_parts[total_parts].partname;
-			cc_lpf3_info->main_flash_num_banks = 2;
+			cc_lpf3_info->main_flash_num_banks = 1;
 			return ERROR_OK;
 		}
 	}
@@ -70,6 +70,7 @@ static bool cc27xx_check_allowed_flash_op(int op)
 		if(cc_op == CC_LPF3_FLASH_OP_CHIP_ERASE) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
 			LOG_INFO("Performing Chip Erase");
 		} else if (cc_op == CC_LPF3_FLASH_OP_PROG_MAIN) {
 			op_allowed = 1;
@@ -97,6 +98,7 @@ static bool cc27xx_check_allowed_flash_op(int op)
 		if(cc_op == CC_LPF3_FLASH_OP_REVERT_STAGE) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
 		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN && b_scfg) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
@@ -115,6 +117,7 @@ static bool cc27xx_check_allowed_flash_op(int op)
 		if(cc_op == CC_LPF3_FLASH_OP_REVERT_STAGE) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
 		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN && b_ccfg) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
@@ -133,6 +136,7 @@ static bool cc27xx_check_allowed_flash_op(int op)
 		if(cc_op == CC_LPF3_FLASH_OP_REVERT_STAGE) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
 		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_CCFG && b_scfg) {
 			op_allowed = 1;
 			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
@@ -159,6 +163,7 @@ static bool cc27xx_check_allowed_flash_op(int op)
 	if (flash_stage == CC_LPF3_FLASH_STAGE_COMPLETE)
 	{
 		flash_stage = CC_LPF3_FLASH_STAGE_INIT;
+		b_ccfg = b_scfg = b_main = false;
 		LOG_INFO("MAIN, CCFG and SCFG Programmed");
 	}
 

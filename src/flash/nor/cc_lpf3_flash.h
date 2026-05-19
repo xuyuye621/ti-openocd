@@ -37,6 +37,8 @@
 #define SACI_RXD_READY_CHECK_TIMEOUT	(3000)
 #define SACI_EXIT_SACI_HALT_TIMEOUT		(3000)
 
+#define SACI_RES_SEQ_WRAPAROUND_THRESHOLD   (128)
+
 //*****************************************************************************
 //
 //Boot status definitions (available through PMCTL::BOOTSTA or CFGAP::DEVICESTATUS bits 15:8)

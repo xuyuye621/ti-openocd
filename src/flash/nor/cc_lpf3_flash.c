@@ -486,9 +486,14 @@ static int cc_lpf3_saci_send_sector_tx(struct flash_bank *bank, uint32_t *tx_dat
 				break;
 			}
 
-			curr_resp_seq_num = cmd_resp.resp_seq_num;
-			if (curr_resp_seq_num < (last_resp_seq_num & 0xFF))
-				curr_resp_seq_num = (last_resp_seq_num & 0xFFFFFF00) + 0x100 + curr_resp_seq_num;
+			// Reconstruct full 32-bit sequence from 8-bit protocol response.
+			curr_resp_seq_num = (last_resp_seq_num & 0xFFFFFF00) | cmd_resp.resp_seq_num;
+
+			// Adjust if reconstructed value is > SACI_RES_SEQ_WRAPAROUND_THRESHOLD away (wrong 256-page)
+			if ((int32_t)curr_resp_seq_num - (int32_t)last_resp_seq_num > SACI_RES_SEQ_WRAPAROUND_THRESHOLD)
+				curr_resp_seq_num -= 0x100;
+			else if ((int32_t)last_resp_seq_num - (int32_t)curr_resp_seq_num > SACI_RES_SEQ_WRAPAROUND_THRESHOLD)
+				curr_resp_seq_num += 0x100;
 
 			if((curr_resp_seq_num != (base_resp_seq_number + sector_index))
 				 && (curr_resp_seq_num != (base_resp_seq_number + sector_index - 1))) {
@@ -520,9 +525,14 @@ static int cc_lpf3_saci_send_sector_tx(struct flash_bank *bank, uint32_t *tx_dat
 			break;
 		}
 
-		curr_resp_seq_num = cmd_resp.resp_seq_num;
-		if (curr_resp_seq_num < (last_resp_seq_num & 0xFF))
-			curr_resp_seq_num = (last_resp_seq_num & 0xFFFFFF00) + 0x100 + curr_resp_seq_num;
+		// Reconstruct full 32-bit sequence from 8-bit protocol response
+		curr_resp_seq_num = (last_resp_seq_num & 0xFFFFFF00) | cmd_resp.resp_seq_num;
+
+		// Adjust if reconstructed value is > SACI_RES_SEQ_WRAPAROUND_THRESHOLD away (wrong 256-page)
+		if ((int32_t)curr_resp_seq_num - (int32_t)last_resp_seq_num > SACI_RES_SEQ_WRAPAROUND_THRESHOLD)
+			curr_resp_seq_num -= 0x100;
+		else if ((int32_t)last_resp_seq_num - (int32_t)curr_resp_seq_num > SACI_RES_SEQ_WRAPAROUND_THRESHOLD)
+			curr_resp_seq_num += 0x100;
 
 		if ((curr_resp_seq_num != (base_resp_seq_number + num_sectors - 1))
 			&& (curr_resp_seq_num != (base_resp_seq_number + num_sectors - 2))) {
@@ -642,7 +652,6 @@ int cc_lpf3_saci_verify_scfg(struct flash_bank *bank, const uint8_t* buffer, uin
  */
 int cc_lpf3_saci_verify_main(struct flash_bank *bank, const uint8_t* buffer, uint32_t count, uint32_t start_addr)
 {
-	LOG_INFO ("cc_lpf3_saci_verify_main is called");
 	SACI_PARAM_T cmd;
 	SACI_RESP_T cmd_resp;
 	int ret_val;
