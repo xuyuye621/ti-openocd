@@ -291,7 +291,6 @@ int cc_lpf3_base_probe(struct flash_bank *bank)
         bank->num_sectors = 0x1;
         break;
     case LPF3_FLASH_BASE_MAIN:
-        /* For CC23XX, main_flash_num_banks is 1, for CC27XX it's 2 */
         bank->size = (cc_lpf3_info->main_flash_size_kb * 1024) / cc_lpf3_info->main_flash_num_banks;
         bank->num_sectors = (bank->size) / (LPF3_MAIN_FLASH_SECTOR_SIZE);
         break;
