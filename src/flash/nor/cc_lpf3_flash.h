@@ -37,6 +37,8 @@
 #define SACI_RXD_READY_CHECK_TIMEOUT	(3000)
 #define SACI_EXIT_SACI_HALT_TIMEOUT		(3000)
 
+#define SACI_RES_SEQ_WRAPAROUND_THRESHOLD   (128)
+
 //*****************************************************************************
 //
 //Boot status definitions (available through PMCTL::BOOTSTA or CFGAP::DEVICESTATUS bits 15:8)
@@ -418,7 +420,7 @@ int cc_lpf3_saci_erase(struct flash_bank *bank);
 int cc_lpf3_saci_send_tx_words(struct flash_bank *bank, uint32_t *tx_data, uint32_t length);
 int cc_lpf3_saci_verify_ccfg(struct flash_bank *bank, const uint8_t* buffer);
 int cc_lpf3_saci_verify_scfg(struct flash_bank *bank, const uint8_t* buffer, uint32_t count);
-int cc_lpf3_saci_verify_main(struct flash_bank *bank, const uint8_t* buffer, uint32_t count);
+int cc_lpf3_saci_verify_main(struct flash_bank *bank, const uint8_t* buffer, uint32_t count, uint32_t start_addr);
 int cc_lpf3_do_blank_check(struct flash_bank *bank);
 int cc_lpf3_exit_saci_run(struct flash_bank *bank);
 int cc_lpf3_exit_saci_halt(struct flash_bank *bank);
