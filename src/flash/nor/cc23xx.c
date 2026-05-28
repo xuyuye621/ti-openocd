@@ -35,10 +35,18 @@ static const struct cc_lpf3_part_info cc23xx_parts[] = {
 	{"CC2341R10E0RKPR", 0xBBCC02F, 0x803299B5, 1024, 96},
 	{"CC2341R10E0xxxR", 0xBBCC02F, 0x80D999B5, 1024, 96},
 	{"CC2341R10E0RSLR", 0xBBCC02F, 0x801899B5, 1024, 96},
+	{"CC2341R10E0WRHARQ1", 0xBBCC02F, 0x80F499B5, 1024, 96},
+	{"CC2341R73E0WRHBRQ1", 0xBBCC02F, 0x80BB99B5, 768, 64}
 };
 
 /* CC23XX specific flash stage state */
 static CC_LPF3_FLASH_STAGE_T flash_stage = CC_LPF3_FLASH_STAGE_INIT;
+
+/* Flag to track if current device has SCFG support (CC2341) */
+static bool has_scfg_support = false;
+
+/* Global flags to track programming state (for SCFG-enabled devices) */
+static bool b_ccfg = false, b_scfg = false, b_main = false;
 
 /*
  * Update the flash stage CC23xx devices
@@ -55,6 +63,10 @@ static int cc23xx_check_device_memory_info(struct cc_lpf3_flash_bank *cc_lpf3_in
 			cc_lpf3_info->sram_size_kb = cc23xx_parts[total_parts].ram_size;
 			cc_lpf3_info->name = cc23xx_parts[total_parts].partname;
 			cc_lpf3_info->main_flash_num_banks = 1;
+
+			/* Detect if this device has SCFG support (CC2341 family - device ID 0xBBCC02F) */
+			has_scfg_support = ((device_id & 0x0FFFFFFF) == 0xBBCC02F);
+
 			return ERROR_OK;
 		}
 	}
@@ -63,9 +75,9 @@ static int cc23xx_check_device_memory_info(struct cc_lpf3_flash_bank *cc_lpf3_in
 }
 
 /*
- * Update the flash stage CC23xx devices
+ * Update the flash state for CC23x0 devices
  */
-static bool cc23xx_check_allowed_flash_op(int op)
+static bool cc23xx_check_allowed_flash_op_ccfg_only(int op)
 {
 	bool op_allowed = 0;
 	CC_LPF3_FLASH_OP_T cc_op = (CC_LPF3_FLASH_OP_T)op;
@@ -139,6 +151,136 @@ static bool cc23xx_check_allowed_flash_op(int op)
 }
 
 /*
+ * Update the flash stage for CC23x1 devices
+ */
+static bool cc23xx_check_allowed_flash_op_with_scfg(int op)
+{
+	bool op_allowed = 0;
+	CC_LPF3_FLASH_OP_T cc_op = (CC_LPF3_FLASH_OP_T)op;
+
+	switch (flash_stage) {
+	case CC_LPF3_FLASH_STAGE_INIT:
+		if(cc_op == CC_LPF3_FLASH_OP_CHIP_ERASE) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
+			LOG_INFO("Performing Chip Erase");
+		} else if (cc_op == CC_LPF3_FLASH_OP_PROG_MAIN) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_MAIN;
+			LOG_INFO("Programming Main without prior erase");
+		}
+		break;
+
+	case CC_LPF3_FLASH_STAGE_ERASE:
+		if(cc_op == CC_LPF3_FLASH_OP_REVERT_STAGE) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_INIT;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_CCFG) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_CCFG;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_SCFG) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_SCFG;
+		} else if (cc_op == CC_LPF3_FLASH_OP_PROG_MAIN) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_MAIN;
+		}
+		break;
+	case CC_LPF3_FLASH_STAGE_CCFG:
+		if(cc_op == CC_LPF3_FLASH_OP_REVERT_STAGE) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN && b_scfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN && !b_scfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_MAIN;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_SCFG && b_main) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_SCFG && !b_main) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_SCFG;
+		}
+		break;
+	case CC_LPF3_FLASH_STAGE_SCFG:
+		if(cc_op == CC_LPF3_FLASH_OP_REVERT_STAGE) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN && b_ccfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN && !b_ccfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_MAIN;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_CCFG && b_main) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_CCFG && !b_main) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_CCFG;
+		}
+		break;
+	case CC_LPF3_FLASH_STAGE_MAIN:
+		if(cc_op == CC_LPF3_FLASH_OP_REVERT_STAGE) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_ERASE;
+			b_ccfg = b_scfg = b_main = false;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_CCFG && b_scfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_CCFG && !b_scfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_CCFG;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_SCFG && b_ccfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_SCFG && !b_ccfg) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_SCFG;
+		} else if(cc_op == CC_LPF3_FLASH_OP_PROG_MAIN) {
+			op_allowed = 1;
+			flash_stage = CC_LPF3_FLASH_STAGE_COMPLETE;
+		}
+		break;
+
+	default:
+		LOG_INFO("State: UNKNOWN");
+		break;
+	}
+
+	if (flash_stage == CC_LPF3_FLASH_STAGE_COMPLETE)
+	{
+		flash_stage = CC_LPF3_FLASH_STAGE_INIT;
+		b_ccfg = b_scfg = b_main = false;
+		LOG_INFO("MAIN, CCFG and SCFG Programmed");
+	}
+
+	if(cc_op == CC_LPF3_FLASH_OP_CHIP_ERASE && op_allowed == 0)
+	{
+		LOG_INFO("Erase request discarded as main OR ccfg OR scfg section is programmed");
+	}
+
+	return op_allowed;
+}
+
+/*
+ * Dispatcher: routes to correct state transition function based on device capability
+ */
+static bool cc23xx_check_allowed_flash_op(int op)
+{
+	if (has_scfg_support) {
+		return cc23xx_check_allowed_flash_op_with_scfg(op);
+	} else {
+		return cc23xx_check_allowed_flash_op_ccfg_only(op);
+	}
+}
+
+/*
  *	OpenOCD command interface
  */
 
@@ -180,6 +322,27 @@ static int cc23xx_get_info(struct flash_bank *bank, struct command_invocation *c
 				cc_lpf3_info->sram_size_kb);
 
 	return ERROR_OK;
+}
+
+/*
+ * CC23XX specific write function to handle the global flags for SCFG-enabled devices
+ */
+static int cc23xx_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t offset, uint32_t count)
+{
+	int retval = cc_lpf3_base_write(bank, buffer, offset, count);
+
+	// Update global flags based on successful writes (only for SCFG-enabled devices)
+	if (retval == ERROR_OK && has_scfg_support) {
+		if (bank->base == LPF3_FLASH_BASE_CCFG) {
+			b_ccfg = true;
+		} else if (bank->base == LPF3_FLASH_BASE_SCFG) {
+			b_scfg = true;
+		} else if (bank->base == LPF3_FLASH_BASE_MAIN) {
+			b_main = true;
+		}
+	}
+
+	return retval;
 }
 
 COMMAND_HANDLER(cc23xx_reset_halt_command)
@@ -261,7 +424,7 @@ const struct flash_driver cc23xx_flash = {
 	.commands = cc23xx_command_handlers,
 	.erase = cc_lpf3_base_erase,
 	.protect = cc_lpf3_base_protect,
-	.write = cc_lpf3_base_write,
+	.write = cc23xx_write,
 	.read = cc_lpf3_base_read,
 	.probe = cc_lpf3_base_probe,
 	.verify = cc_lpf3_base_verify,
