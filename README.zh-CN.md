@@ -2,6 +2,8 @@
 
 English: [README.md](README.md)
 
+最新 Release：[nanodap-wireless-0.2](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.2)
+
 针对 TI MSPM0 的 OpenOCD 预编译版本。基于 TI 官方 OpenOCD 源码构建，并加入 Keil 风格的 HID 节奏控制补丁，用于改善 nanoDAP-wireless 这类无线 CMSIS-DAP 调试器在烧录时的丢包、超时和失败问题。
 
 - 源码：https://github.com/TexasInstruments/ti-openocd

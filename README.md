@@ -4,6 +4,8 @@ TI OpenOCD source build with a Keil-style HID pacing patch for nanoDAP-wireless.
 
 简体中文说明：[README.zh-CN.md](README.zh-CN.md)
 
+Latest release: [nanodap-wireless-0.2](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.2)
+
 Source: https://github.com/TexasInstruments/ti-openocd
 Fork: https://github.com/xuyuye621/ti-openocd
 Source branch: `nanoDAP-wireless-hid-pacing`
