@@ -4,12 +4,11 @@ TI OpenOCD source build with a Keil-style HID pacing patch for nanoDAP-wireless.
 
 简体中文说明：[README.zh-CN.md](README.zh-CN.md)
 
-Latest release: [nanodap-wireless-0.2](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.2)
+Latest release: [nanodap-wireless-0.3](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3)
 
 Source: https://github.com/TexasInstruments/ti-openocd
 Fork: https://github.com/xuyuye621/ti-openocd
-Source branch: `nanoDAP-wireless-hid-pacing`
-Source commit: `4a5ae73` (base `cb22a31`)
+Source branch: `ti-release`
 Build: MSYS2 MinGW64, `-O0`, `--disable-buspirate`
 Patch: `cmsis_dap_keil_pacing.patch`
 
@@ -30,6 +29,13 @@ cmsis_dap_keil_pacing.patch
 1. Configurable HID pacing: `cmsis-dap hiddelay <us>`, default 200 us, Keil-like behavior.
 2. HID read timeout retry, up to 5 attempts.
 3. Default SWD speed is 5 MHz; lower the speed or increase the delay if the wireless link is unstable.
+
+## Keil FLM Reconstruction
+
+`contrib/loaders/flash/mspm0/keil-flm-reconstructed/` contains a
+reverse-engineered source-level reconstruction of the TI Keil FLM algorithm
+used by this build. It is not official TI source and is distributed under the
+BSD-3-Clause terms in its `LICENSE` file.
 
 ## Flash
 
@@ -64,14 +70,13 @@ powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 
 
 ## Build from Source
 
-This binary is built from the `nanoDAP-wireless-hid-pacing` branch in the fork. Source commit: `4a5ae73`.
+This binary is built from the `ti-release` branch in the fork.
 
 In an MSYS2 MinGW64 shell:
 
 ```bash
 git clone -b ti-release https://github.com/xuyuye621/ti-openocd.git
 cd ti-openocd
-git checkout nanoDAP-wireless-hid-pacing
 ./configure --disable-buspirate CFLAGS="-O0 -g"
 make -j$(nproc)
 ```

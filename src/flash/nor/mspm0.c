@@ -15,7 +15,36 @@
 
 #include "imp.h"
 #include <helper/bits.h>
+#include <helper/binarybuffer.h>
+#include <target/algorithm.h>
+#include <target/armv7m.h>
 #include <helper/time_support.h>
+
+static const uint8_t mspm0_erase_sector_code[] = {
+#include "../../../contrib/loaders/flash/mspm0/mspm0_erase.inc"
+};
+
+static const uint8_t mspm0_write_block_code[] = {
+#include "../../../contrib/loaders/flash/mspm0/mspm0_write.inc"
+};
+
+static const uint8_t mspm0_mass_erase_code[] = {
+#include "../../../contrib/loaders/flash/mspm0/mspm0_mass_erase.inc"
+};
+
+static const uint8_t mspm0_keil_flm_code[] = {
+#include "../../../contrib/loaders/flash/mspm0/keil_flm_prgcode.inc"
+};
+
+#define MSPM0_KEIL_FLM_CODE_SIZE     0x258
+#define MSPM0_KEIL_FLM_INIT_OFFSET   0x000
+#define MSPM0_KEIL_FLM_ERASE_OFFSET  0x060
+#define MSPM0_KEIL_FLM_ERASE_CHIP_OFFSET 0x0d4
+#define MSPM0_KEIL_FLM_PROGRAM_OFFSET 0x0e8
+#define MSPM0_KEIL_FLM_BKPT_OFFSET   0x300
+#define MSPM0_KEIL_FLM_STACK_OFFSET  0x400
+#define MSPM0_KEIL_FLM_WORKAREA_SIZE 0x800
+#define MSPM0_KEIL_FLM_PAGE_SIZE     0x4000
 
 /* MSPM0 Region memory map */
 #define MSPM0_FLASH_BASE_NONMAIN        0x41C00000
@@ -512,12 +541,11 @@ static int mspm0_read_part_info(struct flash_bank *bank)
 	mspm0_info->flash_version = mspm0_extract_val(flashdesc, 15, 12);
 
 	/*
-	 * Hardcode flash_word_size unless we find some other pattern
-	 * See section 7.7 (Foot note mentions the flash word size).
-	 * almost all values seem to be 8 bytes, but if there are variance,
-	 * then we should update mspm0_part_info structure with this info.
+	 * Use 16-byte (128-bit) multi-word programming to reduce SWD/HID round trips,
+	 * which is a major bottleneck on wireless CMSIS-DAP bridges like nanoDAP-wireless.
+	 * The flash driver already implements the 16-byte command path below.
 	 */
-	mspm0_info->flash_word_size_bytes = 8;
+	mspm0_info->flash_word_size_bytes = 16;
 
 	LOG_DEBUG("Detected: main flash: %uKb in %u banks, sram: %uKb, data flash: %uKb",
 		mspm0_info->main_flash_size_kb, mspm0_info->main_flash_num_banks,
@@ -818,6 +846,399 @@ static int mspm0_protect_check(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
+static int mspm0_run_erase_loader(struct flash_bank *bank, uint32_t addr,
+	uint32_t protect_reg, uint32_t sector_mask)
+{
+	struct target *target = bank->target;
+	struct working_area *workarea;
+	struct reg_param reg_params[3];
+	struct armv7m_algorithm armv7m_algo;
+	int retval;
+	uint32_t result;
+
+	retval = target_alloc_working_area(target, sizeof(mspm0_erase_sector_code),
+			&workarea);
+	if (retval != ERROR_OK)
+		return retval;
+
+	retval = target_write_buffer(target, workarea->address,
+			sizeof(mspm0_erase_sector_code), mspm0_erase_sector_code);
+	if (retval != ERROR_OK)
+		goto free_workarea;
+
+	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	armv7m_algo.core_mode = ARM_MODE_THREAD;
+
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);
+	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);
+
+	buf_set_u32(reg_params[0].value, 0, 32, addr);
+	buf_set_u32(reg_params[1].value, 0, 32, protect_reg);
+	buf_set_u32(reg_params[2].value, 0, 32, sector_mask);
+
+	retval = target_run_algorithm(target, 0, NULL,
+			ARRAY_SIZE(reg_params), reg_params,
+			workarea->address, 0,
+			MSPM0_FLASH_TIMEOUT_MS, &armv7m_algo);
+	if (retval != ERROR_OK)
+		goto destroy_regs;
+
+	result = buf_get_u32(reg_params[0].value, 0, 32);
+	if (result != 0) {
+		LOG_ERROR("MSPM0 RAM loader write returned status 0x%08" PRIx32,
+				result);
+		retval = ERROR_FAIL;
+	}
+
+destroy_regs:
+	for (unsigned int i = 0; i < ARRAY_SIZE(reg_params); i++)
+		destroy_reg_param(&reg_params[i]);
+free_workarea:
+	target_free_working_area(target, workarea);
+	return retval;
+}
+
+static int mspm0_run_erase_loader_using_area(struct flash_bank *bank,
+	struct working_area *workarea, uint32_t addr, uint32_t protect_reg,
+	uint32_t sector_mask)
+{
+	struct target *target = bank->target;
+	struct reg_param reg_params[3];
+	struct armv7m_algorithm armv7m_algo;
+	int retval;
+	uint32_t result;
+
+	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	armv7m_algo.core_mode = ARM_MODE_THREAD;
+
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);
+	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);
+
+	buf_set_u32(reg_params[0].value, 0, 32, addr);
+	buf_set_u32(reg_params[1].value, 0, 32, protect_reg);
+	buf_set_u32(reg_params[2].value, 0, 32, sector_mask);
+
+	retval = target_run_algorithm(target, 0, NULL,
+			ARRAY_SIZE(reg_params), reg_params,
+			workarea->address, 0,
+			MSPM0_FLASH_TIMEOUT_MS, &armv7m_algo);
+	if (retval == ERROR_OK) {
+		result = buf_get_u32(reg_params[0].value, 0, 32);
+		if (result != 0)
+			retval = ERROR_FAIL;
+	}
+
+	for (unsigned int i = 0; i < ARRAY_SIZE(reg_params); i++)
+		destroy_reg_param(&reg_params[i]);
+
+	return retval;
+}
+
+static int mspm0_run_mass_erase_loader(struct flash_bank *bank)
+{
+	struct target *target = bank->target;
+	struct working_area *workarea;
+	struct reg_param reg_params[1];
+	struct armv7m_algorithm armv7m_algo;
+	int retval;
+	uint32_t result;
+
+	retval = target_alloc_working_area(target, sizeof(mspm0_mass_erase_code),
+			&workarea);
+	if (retval != ERROR_OK)
+		return retval;
+
+	retval = target_write_buffer(target, workarea->address,
+			sizeof(mspm0_mass_erase_code), mspm0_mass_erase_code);
+	if (retval != ERROR_OK)
+		goto free_workarea;
+
+	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	armv7m_algo.core_mode = ARM_MODE_THREAD;
+
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);
+	buf_set_u32(reg_params[0].value, 0, 32, 0);
+
+	retval = target_run_algorithm(target, 0, NULL,
+			ARRAY_SIZE(reg_params), reg_params,
+			workarea->address, 0,
+			MSPM0_FLASH_TIMEOUT_MS, &armv7m_algo);
+	if (retval != ERROR_OK)
+		goto destroy_regs;
+
+	result = buf_get_u32(reg_params[0].value, 0, 32);
+	if (result != 0) {
+		LOG_ERROR("MSPM0 RAM loader write status: 0x%08" PRIx32, result);
+		retval = ERROR_FAIL;
+	}
+
+destroy_regs:
+	destroy_reg_param(&reg_params[0]);
+free_workarea:
+	target_free_working_area(target, workarea);
+	return retval;
+}
+
+static int mspm0_run_write_loader(struct flash_bank *bank, uint32_t addr,
+	const uint8_t *buffer, uint32_t count, uint32_t protect_reg,
+	uint32_t sector_mask)
+{
+	struct target *target = bank->target;
+	struct working_area *code_workarea;
+	struct working_area *data_workarea;
+	struct reg_param reg_params[5];
+	struct armv7m_algorithm armv7m_algo;
+	int retval;
+	uint32_t result;
+
+	if (count == 0)
+		return ERROR_OK;
+
+	retval = target_alloc_working_area(target, sizeof(mspm0_write_block_code),
+			&code_workarea);
+	if (retval != ERROR_OK)
+		return retval;
+
+	retval = target_alloc_working_area(target, count, &data_workarea);
+	if (retval != ERROR_OK)
+		goto free_code;
+
+	retval = target_write_buffer(target, code_workarea->address,
+			sizeof(mspm0_write_block_code), mspm0_write_block_code);
+	if (retval != ERROR_OK)
+		goto free_data;
+
+	retval = target_write_buffer(target, data_workarea->address,
+			count, buffer);
+	if (retval != ERROR_OK)
+		goto free_data;
+
+	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	armv7m_algo.core_mode = ARM_MODE_THREAD;
+
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);
+	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);
+	init_reg_param(&reg_params[3], "r3", 32, PARAM_OUT);
+	init_reg_param(&reg_params[4], "r4", 32, PARAM_OUT);
+
+	buf_set_u32(reg_params[0].value, 0, 32, addr);
+	buf_set_u32(reg_params[1].value, 0, 32, data_workarea->address);
+	buf_set_u32(reg_params[2].value, 0, 32, count);
+	buf_set_u32(reg_params[3].value, 0, 32, protect_reg);
+	buf_set_u32(reg_params[4].value, 0, 32, sector_mask);
+
+	retval = target_run_algorithm(target, 0, NULL,
+			ARRAY_SIZE(reg_params), reg_params,
+			code_workarea->address, 0,
+			5 * 60 * 1000, &armv7m_algo);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("MSPM0 RAM loader target_run_algorithm failed: %d",
+				retval);
+		goto destroy_regs;
+	}
+
+	result = buf_get_u32(reg_params[0].value, 0, 32);
+	if (result != 0)
+		retval = ERROR_FAIL;
+
+destroy_regs:
+	for (unsigned int i = 0; i < ARRAY_SIZE(reg_params); i++)
+		destroy_reg_param(&reg_params[i]);
+free_data:
+	target_free_working_area(target, data_workarea);
+free_code:
+	target_free_working_area(target, code_workarea);
+	return retval;
+}
+
+static int mspm0_keil_flm_prepare(struct flash_bank *bank,
+	struct working_area **workarea)
+{
+	struct target *target = bank->target;
+	uint8_t bkpt_code[2] = { 0x00, 0xbe };
+	int retval;
+
+	retval = target_alloc_working_area(target, MSPM0_KEIL_FLM_WORKAREA_SIZE,
+			workarea);
+	if (retval != ERROR_OK)
+		return retval;
+
+	retval = target_write_buffer(target, (*workarea)->address,
+			sizeof(mspm0_keil_flm_code), mspm0_keil_flm_code);
+	if (retval != ERROR_OK)
+		goto free_workarea;
+
+	retval = target_write_buffer(target,
+			(*workarea)->address + MSPM0_KEIL_FLM_BKPT_OFFSET,
+			sizeof(bkpt_code), bkpt_code);
+	if (retval != ERROR_OK)
+		goto free_workarea;
+
+	return ERROR_OK;
+
+free_workarea:
+	target_free_working_area(target, *workarea);
+	*workarea = NULL;
+	return retval;
+}
+
+static int mspm0_keil_flm_call(struct flash_bank *bank,
+	struct working_area *workarea, uint32_t function_offset,
+	uint32_t r0_value, uint32_t r1_value, uint32_t r2_value)
+{
+	struct target *target = bank->target;
+	struct reg_param reg_params[5];
+	struct armv7m_algorithm armv7m_algo;
+	uint32_t result = 0;
+	int retval;
+
+	armv7m_algo.common_magic = ARMV7M_COMMON_MAGIC;
+	armv7m_algo.core_mode = ARM_MODE_THREAD;
+
+	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);
+	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);
+	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);
+	init_reg_param(&reg_params[3], "lr", 32, PARAM_OUT);
+	init_reg_param(&reg_params[4], "sp", 32, PARAM_OUT);
+
+	buf_set_u32(reg_params[0].value, 0, 32, r0_value);
+	buf_set_u32(reg_params[1].value, 0, 32, r1_value);
+	buf_set_u32(reg_params[2].value, 0, 32, r2_value);
+	buf_set_u32(reg_params[3].value, 0, 32,
+		(workarea->address + MSPM0_KEIL_FLM_BKPT_OFFSET) | 1);
+	buf_set_u32(reg_params[4].value, 0, 32,
+		workarea->address + MSPM0_KEIL_FLM_STACK_OFFSET);
+
+	retval = target_run_algorithm(target, 0, NULL,
+			ARRAY_SIZE(reg_params), reg_params,
+			workarea->address + function_offset, 0,
+			5 * 60 * 1000, &armv7m_algo);
+	if (retval == ERROR_OK) {
+		result = buf_get_u32(reg_params[0].value, 0, 32);
+		if (result != 0)
+			retval = ERROR_FAIL;
+	}
+
+	for (unsigned int i = 0; i < ARRAY_SIZE(reg_params); i++)
+		destroy_reg_param(&reg_params[i]);
+
+	return retval;
+}
+
+static int mspm0_keil_flm_erase(struct flash_bank *bank,
+	unsigned int first, unsigned int last)
+{
+	struct mspm0_flash_bank *mspm0_info = bank->driver_priv;
+	struct target *target = bank->target;
+	struct working_area *workarea = NULL;
+	int retval;
+
+	retval = mspm0_keil_flm_prepare(bank, &workarea);
+	if (retval != ERROR_OK)
+		return retval;
+
+	retval = mspm0_keil_flm_call(bank, workarea,
+			MSPM0_KEIL_FLM_INIT_OFFSET, 0, 0, 0);
+	if (retval != ERROR_OK)
+		goto done;
+
+	if (bank->base == MSPM0_FLASH_BASE_MAIN) {
+		retval = mspm0_keil_flm_call(bank, workarea,
+				MSPM0_KEIL_FLM_ERASE_CHIP_OFFSET, 0, 0, 0);
+		goto done;
+	}
+
+	for (unsigned int sector = first; sector <= last; sector++) {
+		uint32_t addr = bank->base + (sector * mspm0_info->sector_size);
+		retval = mspm0_keil_flm_call(bank, workarea,
+				MSPM0_KEIL_FLM_ERASE_OFFSET, addr, 0, 0);
+		if (retval != ERROR_OK)
+			break;
+	}
+
+done:
+	target_free_working_area(target, workarea);
+	return retval;
+}
+
+static int mspm0_keil_flm_write(struct flash_bank *bank,
+	const uint8_t *buffer, uint32_t offset, uint32_t count)
+{
+	struct target *target = bank->target;
+	struct working_area *code_workarea = NULL;
+	struct working_area *data_workarea = NULL;
+	int retval;
+
+	retval = mspm0_keil_flm_prepare(bank, &code_workarea);
+	if (retval != ERROR_OK)
+		return retval;
+
+	retval = target_alloc_working_area(target, MSPM0_KEIL_FLM_PAGE_SIZE,
+			&data_workarea);
+	if (retval != ERROR_OK)
+		goto free_code;
+
+	retval = mspm0_keil_flm_call(bank, code_workarea,
+			MSPM0_KEIL_FLM_INIT_OFFSET, 0, 0, 0);
+	if (retval != ERROR_OK)
+		goto free_data;
+
+	while (count > 0) {
+		uint32_t chunk = MIN(count, MSPM0_KEIL_FLM_PAGE_SIZE);
+		uint32_t addr = bank->base + offset;
+
+		chunk &= ~7U;
+		if (chunk == 0)
+			break;
+
+		retval = target_write_buffer(target, data_workarea->address,
+				chunk, buffer);
+		if (retval != ERROR_OK)
+			break;
+
+		retval = mspm0_keil_flm_call(bank, code_workarea,
+				MSPM0_KEIL_FLM_PROGRAM_OFFSET, addr,
+				chunk, data_workarea->address);
+		if (retval != ERROR_OK)
+			break;
+
+		buffer += chunk;
+		offset += chunk;
+		count -= chunk;
+	}
+
+free_data:
+	target_free_working_area(target, data_workarea);
+free_code:
+	target_free_working_area(target, code_workarea);
+	return retval;
+}
+
+static int mspm0_erase_sector_with_fallback(struct flash_bank *bank,
+	uint32_t addr, struct working_area *erase_workarea)
+{
+	unsigned int reg = 0;
+	unsigned int sector_mask = 0;
+	int retval = mspm0_fctl_get_sector_reg(bank, addr, &reg, &sector_mask);
+
+	if (retval == ERROR_OK) {
+		if (erase_workarea != NULL)
+			retval = mspm0_run_erase_loader_using_area(bank,
+					erase_workarea, addr, reg, sector_mask);
+		else
+			retval = mspm0_run_erase_loader(bank, addr, reg,
+					sector_mask);
+	}
+
+	if (retval != ERROR_OK)
+		retval = mspm0_fctl_sector_erase(bank, addr);
+
+	return retval;
+}
+
 static int mspm0_erase(struct flash_bank *bank, unsigned int first, unsigned int last)
 {
 	struct target *target = bank->target;
@@ -844,18 +1265,39 @@ static int mspm0_erase(struct flash_bank *bank, unsigned int first, unsigned int
 		}
 	}
 
+	retval = mspm0_keil_flm_erase(bank, first, last);
+	if (retval == ERROR_OK)
+		goto restore_protection;
+
+	struct working_area *erase_workarea = NULL;
+	bool erase_area_ok = false;
+	retval = target_alloc_working_area(target,
+			sizeof(mspm0_erase_sector_code), &erase_workarea);
+	if (retval == ERROR_OK) {
+		retval = target_write_buffer(target, erase_workarea->address,
+				sizeof(mspm0_erase_sector_code),
+				mspm0_erase_sector_code);
+		if (retval == ERROR_OK)
+			erase_area_ok = true;
+		else
+			target_free_working_area(target, erase_workarea);
+	}
+
 	switch (bank->base) {
 	case MSPM0_FLASH_BASE_MAIN:
 		for (unsigned int csa = first; csa <= last; csa++) {
 			unsigned int addr = csa * mspm0_info->sector_size;
-			retval = mspm0_fctl_sector_erase(bank, addr);
+			retval = mspm0_erase_sector_with_fallback(bank, addr,
+					erase_area_ok ? erase_workarea : NULL);
 			if (retval != ERROR_OK)
 				LOG_ERROR("Sector erase on MAIN failed at address 0x%08x "
 						"(sector: %u)", addr, csa);
 		}
 		break;
 	case MSPM0_FLASH_BASE_NONMAIN:
-		retval = mspm0_fctl_sector_erase(bank, MSPM0_FLASH_BASE_NONMAIN);
+		retval = mspm0_erase_sector_with_fallback(bank,
+				MSPM0_FLASH_BASE_NONMAIN,
+				erase_area_ok ? erase_workarea : NULL);
 		if (retval != ERROR_OK)
 			LOG_ERROR("Sector erase on NONMAIN failed");
 		break;
@@ -863,7 +1305,8 @@ static int mspm0_erase(struct flash_bank *bank, unsigned int first, unsigned int
 		for (unsigned int csa = first; csa <= last; csa++) {
 			unsigned int addr = (MSPM0_FLASH_BASE_DATA +
 			(csa * mspm0_info->sector_size));
-			retval = mspm0_fctl_sector_erase(bank, addr);
+			retval = mspm0_erase_sector_with_fallback(bank, addr,
+					erase_area_ok ? erase_workarea : NULL);
 			if (retval != ERROR_OK)
 				LOG_ERROR("Sector erase on DATA bank failed at address 0x%08x "
 						"(sector: %u)", addr, csa);
@@ -875,10 +1318,14 @@ static int mspm0_erase(struct flash_bank *bank, unsigned int first, unsigned int
 		break;
 	}
 
+	if (erase_area_ok)
+		target_free_working_area(target, erase_workarea);
+
 	/* If there were any issues in our checks, return the error */
 	if (retval != ERROR_OK)
 		return retval;
 
+restore_protection:
 	/*
 	 * TRM Says:
 	 * Note that the CMDWEPROTx registers are reset to a protected state
@@ -941,8 +1388,46 @@ static int mspm0_write(struct flash_bank *bank, const unsigned char *buffer,
 		}
 	}
 
+	retval = mspm0_keil_flm_write(bank, buffer, offset, count);
+	if (retval == ERROR_OK)
+		goto restore_protection;
+
 	/* Add proper memory offset for bank being written to */
 	unsigned int addr = bank->base + offset;
+
+	while (count >= mspm0_info->flash_word_size_bytes) {
+		unsigned int sector_remaining = mspm0_info->sector_size -
+			(addr % mspm0_info->sector_size);
+		uint32_t chunk = MIN(count, sector_remaining);
+		uint32_t avail = target_get_working_area_avail(target);
+		uint32_t max_chunk = avail > sizeof(mspm0_write_block_code) ?
+			avail - sizeof(mspm0_write_block_code) : 0;
+
+		chunk &= ~(mspm0_info->flash_word_size_bytes - 1U);
+		chunk = MIN(chunk, max_chunk);
+		if (chunk == 0)
+			break;
+
+		unsigned int reg = 0;
+		unsigned int sector_mask = 0;
+		retval = mspm0_fctl_get_sector_reg(bank, addr, &reg,
+				&sector_mask);
+		if (retval != ERROR_OK)
+			break;
+
+		retval = mspm0_run_write_loader(bank, addr, buffer, chunk,
+				reg, sector_mask);
+		if (retval != ERROR_OK) {
+			LOG_DEBUG("MSPM0 RAM loader write failed at 0x%08" PRIx32
+				", falling back to register path", addr);
+			break;
+		}
+
+		addr += chunk;
+		buffer += chunk;
+		count -= chunk;
+		offset += chunk;
+	}
 
 	while (count) {
 		unsigned int num_bytes_to_write;
@@ -1013,6 +1498,7 @@ static int mspm0_write(struct flash_bank *bank, const unsigned char *buffer,
 	 * Let us just Dump the protection registers back to the system.
 	 * That way we retain the protection status as requested by the user
 	 */
+restore_protection:
 	for (unsigned int i = 0; i < mspm0_info->protect_reg_count; i++) {
 		retval = target_write_u32(target,
 			mspm0_info->protect_reg_base + (i * 4),

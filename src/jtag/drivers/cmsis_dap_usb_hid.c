@@ -35,8 +35,6 @@ struct cmsis_dap_backend_data {
 	hid_device *dev_handle;
 };
 
-unsigned int cmsis_dap_hid_delay_us = 200;
-
 struct cmsis_dap_report_size {
 	unsigned short vid;
 	unsigned short pid;
@@ -213,27 +211,17 @@ static int cmsis_dap_hid_read(struct cmsis_dap *dap, int transfer_timeout_ms,
 	else
 		timeout_ms = transfer_timeout_ms;
 
-	/* Retry and pace reads for lossy wireless CMSIS-DAP bridges (Keil-like). */
-	for (int attempt = 0; attempt < 5; attempt++) {
-		int retval = hid_read_timeout(dap->bdata->dev_handle,
-									  dap->packet_buffer, dap->packet_buffer_size,
-									  timeout_ms);
-		if (retval == 0) {
-			if (attempt < 4) {
-				usleep(cmsis_dap_hid_delay_us);
-				continue;
-			}
-			return ERROR_TIMEOUT_REACHED;
-		} else if (retval == -1) {
-			LOG_ERROR("error reading data: %ls", hid_error(dap->bdata->dev_handle));
-			return ERROR_FAIL;
-		}
-
-		usleep(cmsis_dap_hid_delay_us);
-		return retval;
+	int retval = hid_read_timeout(dap->bdata->dev_handle,
+								  dap->packet_buffer, dap->packet_buffer_size,
+								  timeout_ms);
+	if (retval == 0)
+		return ERROR_TIMEOUT_REACHED;
+	if (retval == -1) {
+		LOG_ERROR("error reading data: %ls", hid_error(dap->bdata->dev_handle));
+		return ERROR_FAIL;
 	}
 
-	return ERROR_TIMEOUT_REACHED;
+	return retval;
 }
 
 static int cmsis_dap_hid_write(struct cmsis_dap *dap, int txlen, int timeout_ms)
@@ -251,9 +239,6 @@ static int cmsis_dap_hid_write(struct cmsis_dap *dap, int txlen, int timeout_ms)
 		LOG_ERROR("error writing data: %ls", hid_error(dap->bdata->dev_handle));
 		return ERROR_FAIL;
 	}
-
-	/* Pace HID writes for lossy wireless CMSIS-DAP bridges (Keil-like). */
-	usleep(cmsis_dap_hid_delay_us);
 
 	return retval;
 }

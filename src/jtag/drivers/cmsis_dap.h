@@ -73,8 +73,6 @@ struct cmsis_dap_backend {
 extern const struct cmsis_dap_backend cmsis_dap_hid_backend;
 extern const struct cmsis_dap_backend cmsis_dap_usb_backend;
 extern const struct command_registration cmsis_dap_usb_subcommand_handlers[];
-extern unsigned int cmsis_dap_hid_delay_us;
-
 #define REPORT_ID_SIZE   1
 
 #endif
