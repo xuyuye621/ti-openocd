@@ -2,15 +2,14 @@
 
 English: [README.md](README.md)
 
-最新 Release：[nanodap-wireless-0.3](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3)
+最新 Release：[nanodap-wireless-0.3.1](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.1)
 
-针对 TI MSPM0 的 OpenOCD 预编译版本。基于 TI 官方 OpenOCD 源码构建，并加入 Keil 风格的 HID 节奏控制补丁，用于改善 nanoDAP-wireless 这类无线 CMSIS-DAP 调试器在烧录时的丢包、超时和失败问题。
+针对 TI MSPM0 的 OpenOCD 预编译版本。基于 TI 官方 OpenOCD 源码构建，烧录路径只使用 TI Keil FLM 算法。
 
 - 源码：https://github.com/TexasInstruments/ti-openocd
 - Fork：https://github.com/xuyuye621/ti-openocd
 - 源码分支：`ti-release`
 - 构建环境：MSYS2 MinGW64，`-O0`，`--disable-buspirate`
-- 补丁：`cmsis_dap_keil_pacing.patch`
 
 ## 目录结构
 
@@ -21,14 +20,13 @@ share/openocd/scripts
 flash-mspm0.ps1
 README.md
 README.zh-CN.md
-cmsis_dap_keil_pacing.patch
 ```
 
 ## 这个版本做了什么
 
-1. HID 读写后增加可配置延迟：`cmsis-dap hiddelay <us>`，默认 200 微秒，行为接近 Keil 的 DAP 驱动。
-2. HID 读取超时时自动重试，最多 5 次，减少无线桥接偶发丢包导致的失败。
-3. 默认 SWD 频率 5 MHz；如果无线链路不稳，可降低频率或增大延迟。
+1. MSPM0 烧录只使用 TI Keil FLM 算法。
+2. 已移除 RAM loader 回退和寄存器编程回退。
+3. 默认 SWD 频率 5 MHz。
 
 ## Keil FLM 重建源码
 
@@ -52,10 +50,10 @@ powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf
 powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify
 ```
 
-指定 5 MHz、200 微秒 HID 延迟：
+指定 5 MHz 并校验：
 
 ```powershell
-powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 5000 -DelayUs 200
+powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 5000
 ```
 
 ### 参数说明
@@ -65,7 +63,6 @@ powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 
 | `-ElfPath` | 必填 | 要烧录的 elf 文件路径 |
 | `-Verify` | 关闭 | 烧录后校验 Flash |
 | `-SpeedKHz` | `5000` | SWD 频率，单位 kHz |
-| `-DelayUs` | `200` | HID 读写节奏延迟，单位微秒 |
 
 ## 从源码构建
 
@@ -87,7 +84,7 @@ Windows 下的构建产物为 `src/openocd.exe`。发布时需要同时带上所
 在解压目录中启动 OpenOCD：
 
 ```powershell
-& .\bin\openocd.exe -f interface/cmsis-dap.cfg -f target/ti_mspm0.cfg -c "cmsis-dap hiddelay 200" -c "adapter speed 5000" -c "init"
+& .\bin\openocd.exe -f interface/cmsis-dap.cfg -f target/ti_mspm0.cfg -c "adapter speed 5000" -c "init"
 ```
 
 再用 `arm-none-eabi-gdb` 连接 3333 端口：
@@ -103,4 +100,3 @@ continue
 
 - 小体积 SDK 例程：烧录和 Verify 通过。
 - 85 KB CMake 固件：500 kHz 与 5 MHz 下烧录和 Verify 通过。
-- 校验使用 HID 读重试，稳定性更好；默认关闭校验以加快烧录。
