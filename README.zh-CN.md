@@ -2,14 +2,13 @@
 
 English: [README.md](README.md)
 
-最新 Release：[nanodap-wireless-0.2](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.2)
+最新 Release：[nanodap-wireless-0.3](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3)
 
 针对 TI MSPM0 的 OpenOCD 预编译版本。基于 TI 官方 OpenOCD 源码构建，并加入 Keil 风格的 HID 节奏控制补丁，用于改善 nanoDAP-wireless 这类无线 CMSIS-DAP 调试器在烧录时的丢包、超时和失败问题。
 
 - 源码：https://github.com/TexasInstruments/ti-openocd
 - Fork：https://github.com/xuyuye621/ti-openocd
-- 源码分支：`nanoDAP-wireless-hid-pacing`
-- 源码提交：`4a5ae73`（基线 `cb22a31`）
+- 源码分支：`ti-release`
 - 构建环境：MSYS2 MinGW64，`-O0`，`--disable-buspirate`
 - 补丁：`cmsis_dap_keil_pacing.patch`
 
@@ -30,6 +29,12 @@ cmsis_dap_keil_pacing.patch
 1. HID 读写后增加可配置延迟：`cmsis-dap hiddelay <us>`，默认 200 微秒，行为接近 Keil 的 DAP 驱动。
 2. HID 读取超时时自动重试，最多 5 次，减少无线桥接偶发丢包导致的失败。
 3. 默认 SWD 频率 5 MHz；如果无线链路不稳，可降低频率或增大延迟。
+
+## Keil FLM 重建源码
+
+`contrib/loaders/flash/mspm0/keil-flm-reconstructed/` 存放本版本使用的 TI
+Keil FLM 算法的逆向重建源码。它不是 TI 官方源码，按 `LICENSE` 中的
+BSD-3-Clause 条款发布。
 
 ## 烧录
 
@@ -64,14 +69,13 @@ powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 
 
 ## 从源码构建
 
-本压缩包由 fork 的 `nanoDAP-wireless-hid-pacing` 分支构建，源码提交为 `4a5ae73`。
+本压缩包由 fork 的 `ti-release` 分支构建。
 
 在 MSYS2 MinGW64 终端中执行：
 
 ```bash
 git clone -b ti-release https://github.com/xuyuye621/ti-openocd.git
 cd ti-openocd
-git checkout nanoDAP-wireless-hid-pacing
 ./configure --disable-buspirate CFLAGS="-O0 -g"
 make -j$(nproc)
 ```

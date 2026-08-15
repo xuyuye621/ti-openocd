@@ -2236,16 +2236,6 @@ COMMAND_HANDLER(cmsis_dap_handle_quirk_command)
 	return ERROR_OK;
 }
 
-COMMAND_HANDLER(cmsis_dap_handle_hid_delay_command)
-{
-	if (CMD_ARGC != 1)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[0], cmsis_dap_hid_delay_us);
-	command_print(CMD, "CMSIS-DAP HID pacing delay set to %u us", cmsis_dap_hid_delay_us);
-	return ERROR_OK;
-}
-
 static const struct command_registration cmsis_dap_subcommand_handlers[] = {
 	{
 		.name = "info",
@@ -2281,13 +2271,6 @@ static const struct command_registration cmsis_dap_subcommand_handlers[] = {
 		.mode = COMMAND_ANY,
 		.help = "allow expensive workarounds of known adapter quirks.",
 		.usage = "[enable | disable]",
-	},
-	{
-		.name = "hiddelay",
-		.handler = &cmsis_dap_handle_hid_delay_command,
-		.mode = COMMAND_CONFIG,
-		.help = "set HID read/write pacing delay in microseconds.",
-		.usage = "<us>",
 	},
 #if BUILD_CMSIS_DAP_USB
 	{
