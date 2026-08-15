@@ -7,9 +7,33 @@ English：[README.md](README.md)
 
 最新 Release：[nanodap-wireless-0.3.1](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.1)
 
+## 为什么用这个版本
+
+在无线 CMSIS-DAP 桥接器上，普通的逐个寄存器烧录路径可能又慢又不稳定。
+这个版本内置 TI Keil FLM 算法，擦除和编程序列在芯片内部执行，行为更接近
+Keil MDK 的烧录方式。
+
+## TI Keil FLM 是什么
+
+Keil FLM 是 Keil MDK 使用的 Flash 编程算法。OpenOCD 会把它加载到目标芯片的
+SRAM，然后由 MSPM0 自己配置 FlashCtl、执行擦除/编程并等待命令完成，减少
+调试器往返次数，烧录更接近 Keil 的行为。
+
+## 支持范围
+
+- 芯片：TI MSPM0 G1x0x / G3x0x 系列，已在 MSPM0G3507 上验证。
+- 调试器：CMSIS-DAP 接口，已在 nanoDAP-wireless 上验证；其他 CMSIS-DAP
+  调试器未正式测试。
+
 ## 快速开始
 
-下载并解压最新 Release，然后运行：
+环境要求：
+
+- Windows + PowerShell
+- 已解压的 Release 包
+- 已连接的 CMSIS-DAP 调试器
+
+运行：
 
 ```powershell
 powershell -File .\flash-mspm0.ps1 -ElfPath 你的固件路径.elf -Verify
@@ -23,11 +47,25 @@ powershell -File .\flash-mspm0.ps1 -ElfPath 你的固件路径.elf -Verify
 | `-Verify` | 关闭 | 烧录后校验 Flash |
 | `-SpeedKHz` | `5000` | SWD 频率，单位 kHz |
 
-## 特性
+固件格式说明：
 
-- 擦除和编程只使用 TI Keil FLM 算法。
-- 不使用 RAM loader，也没有寄存器回退路径。
-- 默认 SWD 频率 5 MHz。
+- 推荐使用 `.elf` 或 `.hex`。
+- `.bin` 需要基地址，当前脚本不会自动推断。
+
+成功时会看到：
+
+```text
+Programming Finished
+Verified OK
+```
+
+## 常见问题
+
+- `unable to find a matching CMSIS-DAP device`：检查 USB/无线调试器连接，
+  并关闭其他占用调试器的工具。
+- `Verify failed` 或烧录卡住：重新连接调试器，并用更低频率重试，例如
+  `-SpeedKHz 500`。
+- 长时间超时：检查无线链路，降低频率，或重新连接后重试。
 
 ## 从源码构建
 
@@ -39,6 +77,8 @@ make -j$(nproc)
 ```
 
 构建产物为 `src/openocd.exe`。发布包还需要所需 DLL 和 OpenOCD 脚本目录。
+
+`flash-mspm0.ps1` 只随 Release 包提供，源码 clone 中不包含。
 
 ## 调试
 

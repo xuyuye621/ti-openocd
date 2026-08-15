@@ -1,15 +1,42 @@
 # ti-keil OpenOCD
 
 OpenOCD build for TI MSPM0 microcontrollers that uses TI's Keil FLM algorithm
-for flashing. It is tested with the nanoDAP-wireless CMSIS-DAP adapter.
+for flash programming. It is tested with the nanoDAP-wireless CMSIS-DAP
+adapter.
 
 简体中文：[README.zh-CN.md](README.zh-CN.md)
 
 Latest release: [nanodap-wireless-0.3.1](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.1)
 
+## Why This Fork
+
+On wireless CMSIS-DAP bridges, a normal register-by-register flash path can be
+slow or unstable. This build embeds TI's Keil FLM algorithm instead, so the
+erase and program sequence runs on the MCU itself, closer to how Keil MDK
+programs flash.
+
+## What Is TI Keil FLM?
+
+Keil FLM is the flash programming algorithm used by Keil MDK. OpenOCD loads it
+into the target's SRAM, and the MSPM0 then configures its FlashCtl controller,
+erases/programs flash, and waits for command completion locally. This reduces
+the number of slow debugger round trips and behaves more like Keil flashing.
+
+## Supported Hardware
+
+- MCU: TI MSPM0 G1x0x / G3x0x series. Validated on MSPM0G3507.
+- Probe: CMSIS-DAP interface. Validated on nanoDAP-wireless; other CMSIS-DAP
+  probes are not officially tested.
+
 ## Quick Start
 
-Download and extract the latest release zip, then run:
+Requirements:
+
+- Windows with PowerShell
+- Extracted release zip
+- Connected CMSIS-DAP probe
+
+Run:
 
 ```powershell
 powershell -File .\flash-mspm0.ps1 -ElfPath path\to\your.elf -Verify
@@ -23,11 +50,26 @@ Options:
 | `-Verify` | off | verify flash after programming |
 | `-SpeedKHz` | `5000` | SWD speed in kHz |
 
-## What It Does
+Firmware notes:
 
-- Uses TI Keil FLM for flash erase and programming.
-- Does not use a RAM loader or register fallback path.
-- Defaults to 5 MHz SWD.
+- `.elf` and `.hex` are recommended.
+- `.bin` requires a base address and is not auto-detected by the script.
+
+Success looks like:
+
+```text
+Programming Finished
+Verified OK
+```
+
+## Troubleshooting
+
+- `unable to find a matching CMSIS-DAP device`: check the USB/wireless probe
+  connection and close other debug tools that may hold the probe.
+- `Verify failed` or flash hangs: reconnect the probe and retry at a lower
+  speed, for example `-SpeedKHz 500`.
+- Long timeout: check the wireless link, reduce speed, or retry after
+  reconnecting.
 
 ## Build
 
@@ -40,6 +82,9 @@ make -j$(nproc)
 
 The executable is `src/openocd.exe`. A release package also needs the required
 DLLs and the OpenOCD script directory.
+
+`flash-mspm0.ps1` is included in the release zip. A source-only clone does not
+contain it.
 
 ## Debug
 
