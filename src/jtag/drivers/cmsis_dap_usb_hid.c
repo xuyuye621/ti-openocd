@@ -27,7 +27,6 @@
 #include <string.h>
 #include <hidapi.h>
 #include <helper/log.h>
-#include <helper/replacements.h>
 
 #include "cmsis_dap.h"
 
@@ -214,9 +213,9 @@ static int cmsis_dap_hid_read(struct cmsis_dap *dap, int transfer_timeout_ms,
 	int retval = hid_read_timeout(dap->bdata->dev_handle,
 								  dap->packet_buffer, dap->packet_buffer_size,
 								  timeout_ms);
-	if (retval == 0)
+	if (retval == 0) {
 		return ERROR_TIMEOUT_REACHED;
-	if (retval == -1) {
+	} else if (retval == -1) {
 		LOG_ERROR("error reading data: %ls", hid_error(dap->bdata->dev_handle));
 		return ERROR_FAIL;
 	}

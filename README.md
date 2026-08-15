@@ -1,16 +1,15 @@
 # ti-keil OpenOCD
 
-TI OpenOCD source build with a Keil-style HID pacing patch for nanoDAP-wireless.
+TI OpenOCD source build with a Keil FLM flash path for nanoDAP-wireless.
 
 简体中文说明：[README.zh-CN.md](README.zh-CN.md)
 
-Latest release: [nanodap-wireless-0.3](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3)
+Latest release: [nanodap-wireless-0.3.1](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.1)
 
 Source: https://github.com/TexasInstruments/ti-openocd
 Fork: https://github.com/xuyuye621/ti-openocd
 Source branch: `ti-release`
 Build: MSYS2 MinGW64, `-O0`, `--disable-buspirate`
-Patch: `cmsis_dap_keil_pacing.patch`
 
 Layout:
 
@@ -21,14 +20,13 @@ share/openocd/scripts
 flash-mspm0.ps1
 README.md
 README.zh-CN.md
-cmsis_dap_keil_pacing.patch
 ```
 
 ## What Changed
 
-1. Configurable HID pacing: `cmsis-dap hiddelay <us>`, default 200 us, Keil-like behavior.
-2. HID read timeout retry, up to 5 attempts.
-3. Default SWD speed is 5 MHz; lower the speed or increase the delay if the wireless link is unstable.
+1. MSPM0 flash uses the TI Keil FLM algorithm only.
+2. RAM loader fallback and register programming fallback are removed.
+3. Default SWD speed is 5 MHz.
 
 ## Keil FLM Reconstruction
 
@@ -53,10 +51,10 @@ Flash with verify:
 powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify
 ```
 
-Example with 5 MHz and 200 us HID pacing:
+Example with verify:
 
 ```powershell
-powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 5000 -DelayUs 200
+powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 5000
 ```
 
 ### Parameters
@@ -66,7 +64,6 @@ powershell -File .\flash-mspm0.ps1 -ElfPath .\build\MSPM0.elf -Verify -SpeedKHz 
 | `-ElfPath` | required | elf file to program |
 | `-Verify` | off | Verify flash after programming |
 | `-SpeedKHz` | `5000` | SWD speed in kHz |
-| `-DelayUs` | `200` | HID read/write pacing in microseconds |
 
 ## Build from Source
 
@@ -88,7 +85,7 @@ The resulting executable is `src/openocd.exe` on Windows. Copy `src/openocd.exe`
 Start OpenOCD from the extracted release directory:
 
 ```powershell
-& .\bin\openocd.exe -f interface/cmsis-dap.cfg -f target/ti_mspm0.cfg -c "cmsis-dap hiddelay 200" -c "adapter speed 5000" -c "init"
+& .\bin\openocd.exe -f interface/cmsis-dap.cfg -f target/ti_mspm0.cfg -c "adapter speed 5000" -c "init"
 ```
 
 Then connect with `arm-none-eabi-gdb` on port 3333:
@@ -104,7 +101,7 @@ continue
 
 - Small SDK example: programming and Verify OK
 - 85KB CMake firmware: Programming and Verify OK at 500 kHz and 5 MHz
-- Verify uses HID read retry for better stability; verify is off by default for speed
+- Small SDK example and 85KB CMake firmware: Keil FLM programming and Verify OK
 
 ## Upstream Documentation
 
