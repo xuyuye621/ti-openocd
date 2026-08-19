@@ -6,7 +6,7 @@ adapter.
 
 简体中文：[README.zh-CN.md](README.zh-CN.md)
 
-Latest release: [nanodap-wireless-0.3.1](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.1)
+Latest release: [nanodap-wireless-0.3.2](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.2)
 
 ## Why This Fork
 
@@ -14,6 +14,9 @@ On wireless CMSIS-DAP bridges, a normal register-by-register flash path can be
 slow or unstable. This build embeds TI's Keil FLM algorithm instead, so the
 erase and program sequence runs on the MCU itself, closer to how Keil MDK
 programs flash.
+
+0.3.2 is built with the same GCC 14.1.0 toolchain as TI's official OpenOCD,
+which fixes intermittent Windows config file loading failures.
 
 ## What Is TI Keil FLM?
 
