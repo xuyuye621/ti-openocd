@@ -5,13 +5,16 @@ nanoDAP-wireless CMSIS-DAP 无线调试器上测试。
 
 English：[README.md](README.md)
 
-最新 Release：[nanodap-wireless-0.3.1](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.1)
+最新 Release：[nanodap-wireless-0.3.2](https://github.com/xuyuye621/ti-openocd/releases/tag/nanodap-wireless-0.3.2)
 
 ## 为什么用这个版本
 
 在无线 CMSIS-DAP 桥接器上，普通的逐个寄存器烧录路径可能又慢又不稳定。
 这个版本内置 TI Keil FLM 算法，擦除和编程序列在芯片内部执行，行为更接近
 Keil MDK 的烧录方式。
+
+0.3.2 改用与 TI 官方 OpenOCD 一致的 GCC 14.1.0 工具链构建，修复 Windows
+下配置文件偶发加载失败的问题。
 
 ## TI Keil FLM 是什么
 
